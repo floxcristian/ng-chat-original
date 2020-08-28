@@ -12,8 +12,14 @@ import {
 } from "ng-chat";
 import { Observable, of } from "rxjs";
 import { delay } from "rxjs/operators";
+import { Socket } from "ng-socket-io";
+import { Http, Response } from "@angular/http";
+import { map, catchError } from "rxjs/operators";
 
 export class DemoAdapter extends ChatAdapter implements IChatGroupAdapter {
+  private socket: Socket;
+  private http: Http;
+  private userId: string;
   public static mockedParticipants: IChatParticipant[] = [
     {
       participantType: ChatParticipantType.User,
@@ -91,21 +97,47 @@ export class DemoAdapter extends ChatAdapter implements IChatGroupAdapter {
         "https://thumbnail.myheritageimages.com/502/323/78502323/000/000114_884889c3n33qfe004v5024_C_64x64C.jpg",
       status: ChatParticipantStatus.Away,
     },
+    {
+      participantType: ChatParticipantType.Group,
+      id: "",
+      displayName: "Grupito",
+      avatar:
+        "https://thumbnail.myheritageimages.com/502/323/78502323/000/000114_884889c3n33qfe004v5024_C_64x64C.jpg",
+      status: ChatParticipantStatus.Away,
+    },
   ];
 
+  constructor(userId: string, socket: Socket, http: Http) {
+    super();
+    this.socket = socket;
+    this.http = http;
+    this.userId = userId;
+
+    this.InitializeSocketListerners();
+  }
+
   listFriends(): Observable<ParticipantResponse[]> {
-    return of(
-      DemoAdapter.mockedParticipants.map((user) => {
-        let participantResponse = new ParticipantResponse();
+    const response = DemoAdapter.mockedParticipants.map((user) => {
+      let participantResponse = new ParticipantResponse();
 
-        participantResponse.participant = user;
-        participantResponse.metadata = {
-          totalUnreadMessages: Math.floor(Math.random() * 10),
-        };
-
-        return participantResponse;
-      })
-    );
+      participantResponse.participant = user;
+      participantResponse.metadata = {
+        totalUnreadMessages: Math.floor(Math.random() * 10),
+      };
+      return participantResponse;
+    });
+    console.log("[+] listFriends: ", response);
+    return this.http
+      .post("http://localhost:3000/listFriends", { userId: this.userId })
+      .pipe(
+        map((res: Response) => {
+          console.log("[+] listFriends: ", res.json());
+          return res.json();
+        }),
+        catchError((error: any) =>
+          Observable.throw(error.json().error || "Server error")
+        )
+      );
   }
 
   getMessageHistory(destinataryId: any): Observable<Message[]> {
@@ -160,6 +192,7 @@ export class DemoAdapter extends ChatAdapter implements IChatGroupAdapter {
   }
 
   groupCreated(group: Group): void {
+    console.log("group created: ", group);
     DemoAdapter.mockedParticipants.push(group);
 
     DemoAdapter.mockedParticipants = DemoAdapter.mockedParticipants.sort(
@@ -170,5 +203,23 @@ export class DemoAdapter extends ChatAdapter implements IChatGroupAdapter {
     this.listFriends().subscribe((response) => {
       this.onFriendsListChanged(response);
     });
+  }
+
+  public InitializeSocketListerners(): void {
+    this.socket.on("messageReceived", (messageWrapper) => {
+      // Handle the received message to ng-chat
+
+      this.onMessageReceived(messageWrapper.user, messageWrapper.message);
+    });
+
+    this.socket.on(
+      "friendsListChanged",
+      (usersCollection: Array<ParticipantResponse>) => {
+        // Handle the received message to ng-chat
+        this.onFriendsListChanged(
+          usersCollection.filter((x) => x.participant.id != this.userId)
+        );
+      }
+    );
   }
 }

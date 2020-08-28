@@ -4,13 +4,14 @@ import {
   Message,
   ParticipantResponse,
   Group,
+  IChatGroupAdapter,
 } from "ng-chat";
 import { Observable, of } from "rxjs";
 import { map, catchError } from "rxjs/operators";
 import { Socket } from "ng-socket-io";
 import { Http, Response } from "@angular/http";
 
-export class SocketIOAdapter extends ChatAdapter {
+export class SocketIOAdapter extends ChatAdapter implements IChatGroupAdapter {
   private socket: Socket;
   private http: Http;
   private userId: string;
@@ -24,11 +25,7 @@ export class SocketIOAdapter extends ChatAdapter {
     this.InitializeSocketListerners();
   }
 
-  groupCreated(group: Group): void {}
-
   listFriends(): Observable<ParticipantResponse[]> {
-    // List connected users to show in the friends list
-    // Sending the userId from the request body as this is just a demo
     return this.http
       .post("http://localhost:3000/listFriends", { userId: this.userId })
       .pipe(
@@ -40,13 +37,21 @@ export class SocketIOAdapter extends ChatAdapter {
   }
 
   getMessageHistory(userId: any): Observable<Message[]> {
-    // This could be an API call to your NodeJS application that would go to the database
-    // and retrieve a N amount of history messages between the users.
     return of([]);
   }
 
   sendMessage(message: Message): void {
     this.socket.emit("sendMessage", message);
+  }
+
+  groupCreated(group: Group): void {
+    console.log("group created: ", group);
+
+    this.listFriends().subscribe((response) => {
+      this.onFriendsListChanged(response);
+    });
+
+    this.socket.emit("groupCreated", group);
   }
 
   public InitializeSocketListerners(): void {

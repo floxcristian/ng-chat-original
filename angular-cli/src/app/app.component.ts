@@ -12,7 +12,6 @@ import { DemoAdapter } from "./demo.adapter";
 })
 export class AppComponent {
   title = "app";
-
   userId: string;
   username: string;
 
@@ -29,8 +28,8 @@ export class AppComponent {
   public InitializeSocketListerners(): void {
     this.socket.on("generatedUserId", (userId) => {
       // Initializing the chat with the userId and the adapter with the socket instance
-      //this.adapter = new SocketIOAdapter(userId, this.socket, this.http);
-      this.adapter = new DemoAdapter();
+      this.adapter = new SocketIOAdapter(userId, this.socket, this.http);
+      //this.adapter = new DemoAdapter(userId, this.socket, this.http);
       this.userId = userId;
     });
   }

@@ -44,9 +44,11 @@ var io = require("socket.io").listen(server);
 
 //var path = __dirname + '/views/';
 
-var usersCollection = [];
+allConnectedParticipants = []; // [ { participant, metadata } ]
+disconnectedParticipants = []; // [ { participant, metadata } ]
+allGroupParticipants = []; // chattingTo
+participantsConnectionLock = {}; //
 
-// Express routes
 app.set("view engine", "vash");
 
 app.use("/Uploads", express.static(path.join(__dirname, "Uploads")));
@@ -55,12 +57,12 @@ app.get("*", function (req, res) {
   res.render("index");
 });
 
-app.post("/listFriends", function (req, res) {
-  var clonedArray = usersCollection.slice();
+app.post("/listFriends", (req, res) => {
+  const clonedArray = allConnectedParticipants.slice();
 
-  // Getting the userId from the request body as this is just a demo
-  // Ideally in a production application you would change this to a session value or something else
-  var i = usersCollection.findIndex((x) => x.participant.id == req.body.userId);
+  const i = allConnectedParticipants.findIndex(
+    (x) => x.participant.id == req.body.userId
+  );
 
   clonedArray.splice(i, 1);
   clonedArray.map((item) => {
@@ -70,7 +72,7 @@ app.post("/listFriends", function (req, res) {
   res.json(clonedArray);
 });
 
-app.post("/uploadFile", function (req, res) {
+app.post("/uploadFile", (req, res) => {
   let form = new formidable.IncomingForm();
   let ngChatDestinataryUserId;
 
@@ -109,60 +111,94 @@ app.post("/uploadFile", function (req, res) {
     });
 });
 
-// Socket.io operations
-io.on("connection", function (socket) {
-  console.log("A user has connected to the server.");
+io.on("connection", (socket) => {
+  console.log("[+] A user has connected to the server.");
 
-  socket.on("join", function (username) {
-    // Same contract as ng-chat.User
-    usersCollection.push({
+  socket.on("join", (username) => {
+    const newParticipant = {
       participant: {
-        id: socket.id, // Assigning the socket ID as the user ID in this example
         displayName: username,
-        status: 0, // ng-chat UserStatus.Online,
-        avatar: null,
+        id: socket.id,
+        status: 0,
+        participantType: 0,
       },
-    });
+      metadata: {
+        totalUnreadMessages: 0,
+      },
+    };
+    allConnectedParticipants.push(newParticipant);
+    console.table(allConnectedParticipants);
 
-    socket.broadcast.emit("friendsListChanged", usersCollection);
-
-    console.log(username + " has joined the chat room.");
-
-    // This is the user's unique ID to be used on ng-chat as the connected user.
+    socket.broadcast.emit("friendsListChanged", allConnectedParticipants);
     socket.emit("generatedUserId", socket.id);
+    console.log(`[+] '${username}' has joined the chat room.`);
 
-    // On disconnect remove this socket client from the users collection
-    socket.on("disconnect", function () {
-      console.log("User disconnected!");
+    socket.on("disconnect", () => {
+      console.log("[+] User disconnected.");
 
-      var i = usersCollection.findIndex((x) => x.participant.id == socket.id);
-      usersCollection.splice(i, 1);
-
-      socket.broadcast.emit("friendsListChanged", usersCollection);
+      const i = allConnectedParticipants.findIndex(
+        (x) => x.participant.id == socket.id
+      );
+      allConnectedParticipants.splice(i, 1);
+      socket.broadcast.emit("friendsListChanged", allConnectedParticipants);
     });
   });
 
-  socket.on("sendMessage", function (message) {
-    console.log("Message received:");
-    console.log(message);
+  socket.on("sendMessage", (message) => {
+    console.log("[+] Send message: ");
+    console.table(message);
 
-    console.log(
-      usersCollection.find((x) => x.participant.id == message.fromId)
+    const sender = allConnectedParticipants.find(
+      (x) => x.participant.id == message.fromId
     );
 
-    io.to(message.toId).emit("messageReceived", {
-      user: usersCollection.find((x) => x.participant.id == message.fromId)
-        .participant,
-      message: message,
-    });
+    if (sender != null) {
+      const groupDestinatary = allGroupParticipants.find(
+        (x) => x.id == message.toId
+      );
 
-    console.log("Message dispatched.");
+      if (groupDestinatary != null) {
+        console.log("groupDestinatary: ", groupDestinatary);
+        // Notificar a todos los usuarios excepto al emisor
+        const usersInGroupToNotify = allConnectedParticipants
+          .filter(
+            (p) =>
+              p.participant.id != sender.participant.id &&
+              groupDestinatary.chattingTo.some((g) => g.id == p.participant.id)
+          )
+          .map((g) => {
+            console.log("participante a notificar: ", g);
+            return g.participant.id;
+          });
+
+        console.log("usersInGroupToNotify: ", usersInGroupToNotify);
+        socket.broadcast.emit("messageReceived", {
+          user: groupDestinatary,
+          message: message,
+        });
+      } else {
+        io.to(message.ToId).emit("messageReceived", {
+          user: sender.participant,
+          message: message,
+        });
+      }
+    }
   });
 
-  socket.on("groupCreated", function (group) {
-    console.log("Group Created:");
-    console.table(group);
-    const userIds = group.chattingTo.map((item) => item.id);
-    io.to(userIds).emit("groupCreated", group);
+  socket.on("groupCreated", (group) => {
+    console.log("[+] Group created.");
+    console.log(group);
+    allGroupParticipants.push(group);
+    const newChatParticipant = { id: socket.id };
+    group.chattingTo.push(newChatParticipant);
+
+    const newParticipant = {
+      participant: group,
+      metadata: { TotalUnreadMessages: 0 },
+    };
+    allConnectedParticipants.push(newParticipant);
+    console.log("[-] allConnectedParticipants:");
+    console.table(allConnectedParticipants);
+    socket.broadcast.emit("friendsListChanged", allConnectedParticipants);
   });
 });

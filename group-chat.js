@@ -1,7 +1,7 @@
 class GroupChat {
   allConnectedParticipants = []; // [ { participant, metadata } ]
-  disconnectedParticipants = []; //
-  allGroupParticipants = []; //
+  disconnectedParticipants = []; // [ { participant, metadata } ]
+  allGroupParticipants = []; // { chattingTo }
   participantsConnectionLock = {}; //
 
   static filteredGroupParticipants(currentUserId) {
@@ -16,51 +16,41 @@ class GroupChat {
     );
   }
 
-  connectedParticipants(currentUserId) {
+  static connectedParticipants(currentUserId) {
     return filteredGroupParticipants(currentUserId).filter(
       (x) => x.participant.id != currentUserId
     );
   }
 
-  join(userName) {
-    /*lock (ParticipantsConnectionLock)
-        {
-            const newParticipant = {
-                participant: {
-                    displayName: userName,
-                    id: socket.id
-                },
-                metadata: {
-                    totalUnreadMessages: 0
-                }
-            }
-            AllConnectedParticipants.push(newParticipant);
-            
+  SendMessage(message) {
+    const sender = allConnectedParticipants.find(
+      (x) => x.participant.id == message.fromId
+    );
 
-            // This will be used as the user's unique ID to be used on ng-chat as the connected user.
-            // You should most likely use another ID on your application
-            Clients.Caller.SendAsync("generatedUserId", Context.ConnectionId);
-            socket.emit("generatedUserId", socket.id)
+    // Si el emisor no esta en la lista de conectados
+    if (sender != null) {
+      const groupDestinatary = allGroupParticipants.filter(
+        (x) => x.id == message.toId
+      );
 
-            Clients.All.SendAsync("friendsListChanged", AllConnectedParticipants);
-        }*/
-  }
+      if (groupDestinatary != null) {
+        // Notificar a todos los usuarios excepto al emisor
+        const usersInGroupToNotify = allConnectedParticipants
+          .filter(
+            (p) =>
+              p.participant.id != sender.participant.id &&
+              groupDestinatary.chattingTo.some((g) => g.id == p.participant.id)
+          )
+          .map((g) => g.participant.id);
 
-  GroupCreated(group) {
-    allGroupParticipants.push(group);
-
-    // Pushing the current user to the "chatting to" list to keep track of who's created the group as well.
-    // In your application you'll probably want a more sofisticated group persistency and management
-
-    const newChatParticipant = { id: socket.id };
-    group.chattingTo.push(newChatParticipant);
-
-    const newParticipant = {
-      participant: group,
-      metadata: { TotalUnreadMessages: 0 },
-    };
-    allConnectedParticipants.push(newParticipant);
-
-    //Clients.All.SendAsync("friendsListChanged", AllConnectedParticipants);
+        socket
+          .to(usersInGroupToNotify)
+          .emit("messageReceived", groupDestinatary, message);
+      } else {
+        socket
+          .to(message.ToId)
+          .emit("messageReceived", sender.participant, message);
+      }
+    }
   }
 }

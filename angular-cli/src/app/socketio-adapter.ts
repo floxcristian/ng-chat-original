@@ -56,14 +56,14 @@ export class SocketIOAdapter extends ChatAdapter implements IChatGroupAdapter {
 
   public InitializeSocketListerners(): void {
     this.socket.on("messageReceived", (messageWrapper) => {
-      // Handle the received message to ng-chat
-
+      console.log("messageReceived: ", messageWrapper);
       this.onMessageReceived(messageWrapper.user, messageWrapper.message);
     });
 
     this.socket.on(
       "friendsListChanged",
       (usersCollection: Array<ParticipantResponse>) => {
+        console.log("friendsListChanged: ", usersCollection);
         // Handle the received message to ng-chat
         this.onFriendsListChanged(
           usersCollection.filter((x) => x.participant.id != this.userId)
